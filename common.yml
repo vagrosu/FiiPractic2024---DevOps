@@ -1,0 +1,75 @@
+---
+- name: VMs config
+  hosts: all
+  become: yes
+  tasks:
+    - name: Disable firewalld
+      service:
+        name: firewalld
+        state: stopped
+        enabled: no
+
+    - name: Set timezone
+      timezone:
+        name: Europe/Bucharest
+
+    - name: Set PermitRootLogin
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^PermitRootLogin'
+        line: 'PermitRootLogin prohibit-password'
+      notify: restart sshd
+
+    - name: Add Docker repository
+      yum_repository:
+        name: docker-ce-stable
+        description: Docker CE Stable
+        baseurl: https://download.docker.com/linux/centos/$releasever/$basearch/stable
+        gpgcheck: yes
+        gpgkey: https://download.docker.com/linux/centos/gpg
+        enabled: yes
+
+    - name: Install Docker
+      package:
+        name: "{{ item }}"
+        state: present
+      with_items:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-compose-plugin
+
+    - name: Start and enable Docker service
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Install Root CA
+      copy:
+        src: /root/certificate/ca.crt
+        dest: /etc/pki/ca-trust/source/anchors/
+      notify: update ca-trust
+
+- name: GitLab VM config
+  hosts: gitlab.fiipractic.lan
+  become: yes
+  tasks:
+    - name: Install GitLab Runner
+      package:
+        name: gitlab-runner
+        state: present
+    
+    - name: Install GitLab CE
+      package:
+        name: gitlab-ce
+        state: present
+
+  handlers:
+    - name: restart sshd
+      service:
+        name: sshd
+        state: restarted
+
+    - name: update ca-trust
+      command: update-ca-trust extract
